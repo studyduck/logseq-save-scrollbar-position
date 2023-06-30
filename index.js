@@ -58,13 +58,15 @@ function getFirstVisibleBlockId() {
 }
 
 async function getPageId() {
+  var currentGraph = await logseq.Editor.getCurrentGraph();
   var currentPage = await logseq.Editor.getCurrentPage();
+  // console.log("currentGraph", currentGraph);
   // console.log("currentPage", currentPage);
 
   if (top.document.body.dataset.page === "home") {
-    return "home";
+    return `${currentGraph.name}/home`;
   } else if (top.document.body.dataset.page === "page") {
-    return currentPage?.uuid;
+    return `${currentGraph.name}/${currentPage.uuid}`;
   }
   return "";
 }
