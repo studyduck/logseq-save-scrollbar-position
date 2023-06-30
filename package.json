@@ -1,0 +1,19 @@
+{
+  "name": "logseq-save-scrollbar-position",
+  "version": "0.0.1",
+  "author": "studyduck",
+  "main": "index.html",
+  "description": "A simple logseq extension that saves the position of the scrollbar on each page",
+  "license": "MIT",
+  "devDependencies": {
+    "@logseq/libs": "^0.0.1-alpha.29"
+  },
+  "browserslist": [
+    "chrome 80"
+  ],
+  "logseq": {
+    "title": "Save Scrollbar Position",
+    "id": "logseq-save-scrollbar-position",
+    "icon": "logseq.png"
+  }
+}
