@@ -4,8 +4,11 @@ A simple logseq extension that saves the position of the scrollbar on each page,
 
 It just saves the position of the scrollbar in the memory, so when you restart logseq desktop app, the last saved data will be cleared.
 
-Double click on the toolbar dots button in the top right corner to bring the page back to the top.
+Demo1, in the "Journals" page: 
+![demo1](./demo1.gif)
 
-Demo:
+Demo2, in the "Whiteboards" page:
+![demo2](./demo2.gif)
 
-![demo](./demo.gif)
+Demo3, in the "All pages" page:
+![demo3](./demo3.gif)

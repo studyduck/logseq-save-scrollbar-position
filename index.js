@@ -1,25 +1,79 @@
 window.LOGSEQ_SAVE_SCROLLBAR_POSITION =
   window.LOGSEQ_SAVE_SCROLLBAR_POSITION || {};
 
-function getTopbar() {
-  // 需要使用 top，否则只能获取沙盒中的 html 元素，无法获取 logseq 中的元素
-  // github.com/vipzhicheng/logseq-plugin-vim-shortcuts/blob/c6d9defef82701a61d7b4f128e3fbdc62ca34411/src/stores/search.ts
+function getMainBox() {
+  // 需要使用 top.document，否则只能获取沙盒中的 html 元素，无法获取 logseq 中的元素：https://github.com/vipzhicheng/logseq-plugin-vim-shortcuts/blob/c6d9defef82701a61d7b4f128e3fbdc62ca34411/src/stores/search.ts#L146
   // console.log("body", top.document.body);
-  return top.document.querySelector(".toolbar-dots-btn");
+  return top.document.getElementById("main-content-container");
+}
+
+function getLsBlocks() {
+  return top.document.querySelectorAll(".content .ls-block");
+}
+
+function getDashboardCards() {
+  return top.document.querySelectorAll(".dashboard-create-card ~ div");
+}
+
+function getPageEntries() {
+  return top.document.querySelectorAll(".cp__all_pages_table td.name");
+}
+
+function getPageType() {
+  return top.document.body.dataset.page;
+  // Journals->home                 mainBox > lsBlocks
+  // Page->page                     mainBox > lsBlocks
+  // Whiteboards->whiteboards       mainBox > dashboardCards
+  // All pages->all-pages           mainBox > pageEntries
+  // -------------------------------------------------------------
+  // Whiteboard->whiteboard         no scrollbar
+  // Graph view->graph              no scrollbar
+}
+
+function pageReady(callback) {
+  // when page is ready, callback will be called, can get mainBox and lsBlocks/dashboardCards/pageEntries
+  const pageType = getPageType();
+  let getContTimer = null;
+  let endTimer = null;
+
+  const getPageContent = function (method) {
+    const len = method().length;
+    // console.log("get PageContent:", method.name, len);
+
+    if (len) {
+      clearInterval(getContTimer);
+      clearTimeout(endTimer);
+      callback();
+    }
+  };
+
+  getContTimer = setInterval(() => {
+    if (pageType === "home" || pageType === "page") {
+      getPageContent(getLsBlocks);
+    } else if (pageType === "whiteboards") {
+      getPageContent(getDashboardCards);
+    } else if (pageType === "all-pages") {
+      getPageContent(getPageEntries);
+    }
+  }, 10);
+
+  endTimer = setTimeout(() => {
+    clearInterval(getContTimer);
+  }, 3000);
 }
 
 function debounce(func, wait, immediate = false) {
-  var timer, result;
+  let timer, result;
   return function () {
-    var context = this;
-    var args = arguments;
-    var laterFn = function () {
+    const context = this;
+    const args = arguments;
+    const laterFn = function () {
       timer = null;
       if (!immediate) {
         result = func.apply(context, args);
       }
     };
-    var callNow = immediate && !timer;
+    const callNow = immediate && !timer;
 
     clearTimeout(timer);
     timer = setTimeout(laterFn, wait);
@@ -30,26 +84,26 @@ function debounce(func, wait, immediate = false) {
   };
 }
 
-// onRouteChanged->handleUrlChange->recoveryScrollPosition->scrollToBlockInPage->onRouteChanged
+// onRouteChanged->handleRouteChange->recoveryScrollPosition->scrollToBlockInPage->onRouteChanged : infinite loop
 // logseq.Editor.scrollToBlockInPage(
 //   "6469cd04-e0fe-4250-8975-bce065209bd0",
 //   "6469cd04-0bc1-46fa-bb9c-d3680470f0aa"
 // );
 function getFirstVisibleBlockId() {
-  var mainBox = getMainBox();
-  var mainRect = mainBox.getBoundingClientRect();
-  var lsBlocks = mainBox.getElementsByClassName("ls-block");
+  const mainBox = getMainBox();
+  const mainRect = mainBox.getBoundingClientRect();
+  const lsBlocks = mainBox.getElementsByClassName("ls-block");
   // console.log("mainRect", mainRect);
 
-  var blockId = "";
+  let blockId = "";
 
-  for (var i = 0; i < lsBlocks.length; i++) {
-    var lsBlock = lsBlocks[i];
-    var rect = lsBlock.getBoundingClientRect();
-    var lsBlockChilds = lsBlock.getElementsByClassName("ls-block");
+  for (let i = 0; i < lsBlocks.length; i++) {
+    const lsBlock = lsBlocks[i];
+    const rect = lsBlock.getBoundingClientRect();
+    const lsBlockChilds = lsBlock.getElementsByClassName("ls-block");
 
     if (rect.bottom >= mainRect.top && lsBlockChilds.length === 0) {
-      blockId = lsBlock?.getAttribute("blockid");
+      blockId = lsBlock.getAttribute("blockid");
       // console.log(lsBlock, blockId);
       break;
     }
@@ -58,112 +112,134 @@ function getFirstVisibleBlockId() {
 }
 
 async function getPageId() {
-  var currentGraph = await logseq.Editor.getCurrentGraph();
-  var currentPage = await logseq.Editor.getCurrentPage();
+  const currentGraph = await logseq.Editor.getCurrentGraph();
+  const currentPage = await logseq.Editor.getCurrentPage();
+  const pageType = getPageType();
   // console.log("currentGraph", currentGraph);
   // console.log("currentPage", currentPage);
+  // console.log("pageType", pageType);
 
-  if (top.document.body.dataset.page === "home") {
-    return `${currentGraph.name}/home`;
-  } else if (top.document.body.dataset.page === "page") {
+  if (
+    pageType === "home" ||
+    pageType === "all-pages" ||
+    pageType === "whiteboards"
+  ) {
+    return `${currentGraph.name}/${pageType}`;
+  } else if (pageType === "page") {
     return `${currentGraph.name}/${currentPage.uuid}`;
   }
   return "";
 }
 
-function getMainBox() {
-  return top.document.getElementById("main-content-container");
-}
+const saveScrollPosition = debounce(async function () {
+  // console.log("---page is ready, save ScrollPosition");
 
-var saveScrollPosition = debounce(async function () {
-  // console.log("ROAM_SAVE_SCROLLBAR_POSITION save ScrollPosition");
-
-  var mainBox = getMainBox();
-  var pageId = await getPageId();
-
-  if (
-    !mainBox ||
-    ["/whiteboards", "/graph", "/all-pages"].some((item) => {
-      return top.location.href.includes(item);
-    })
-  ) {
-    return;
-  }
+  const mainBox = getMainBox();
+  const pageId = await getPageId();
 
   window.LOGSEQ_SAVE_SCROLLBAR_POSITION[pageId] = mainBox.scrollTop;
 
-  console.log(
-    "ROAM_SAVE_SCROLLBAR_POSITION data",
-    window.LOGSEQ_SAVE_SCROLLBAR_POSITION
-  );
+  // console.log(
+  //   "---ROAM_SAVE_SCROLLBAR_POSITION data",
+  //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
+  // );
 }, 500);
 
-function initScrollEvent(time) {
+function initScrollEvent() {
+  // console.log("---page is ready, init ScrollEvent");
   setTimeout(() => {
-    var mainBox = getMainBox();
+    const mainBox = getMainBox();
     mainBox.removeEventListener("scroll", saveScrollPosition);
     mainBox.addEventListener("scroll", saveScrollPosition);
-  }, time);
-}
-
-async function recoveryScrollPosition() {
-  var mainBox = getMainBox();
-  var targetNum = window.LOGSEQ_SAVE_SCROLLBAR_POSITION[await getPageId()];
-
-  if (!targetNum) {
-    initScrollEvent(0);
-    return;
-  }
-
-  var step = 200;
-  var timer = setInterval(() => {
-    if (mainBox.scrollTop + step < targetNum) {
-      mainBox.scrollTop += step;
-    } else {
-      mainBox.scrollTop = targetNum;
-      clearInterval(timer);
-      initScrollEvent(0);
-    }
   }, 10);
 }
 
-async function handleUrlChange() {
-  //   console.log(
-  //     "LOGSEQ_SAVE_SCROLLBAR_POSITION onRouteChanged",
-  //     await getPageId()
-  //   );
+async function recoveryScrollPosition() {
+  // console.log("---page is ready, recovery ScrollPosition");
+  const mainBox = getMainBox();
+  const targetNum = window.LOGSEQ_SAVE_SCROLLBAR_POSITION[await getPageId()];
 
-  var contentsLen = top.document.querySelectorAll(".content .ls-block")?.length;
-  if (contentsLen) {
-    recoveryScrollPosition();
+  if (!targetNum) {
+    initScrollEvent();
+    return;
   }
+
+  const step = 200;
+  const timer = setInterval(() => {
+    if (mainBox.scrollTop + step < targetNum) {
+      mainBox.scrollTop += step;
+    } else {
+      clearInterval(timer);
+      mainBox.scrollTop = targetNum;
+      initScrollEvent();
+    }
+  }, 10);
+}
+let lastPageType = "";
+async function handleRouteChange(route) {
+  // console.log("---------route change---------");
+
+  // 和 all-pages、whiteboards 行为保持一致
+  const curPageType = getPageType();
+  if (lastPageType === "home" && curPageType === "home") {
+    window.LOGSEQ_SAVE_SCROLLBAR_POSITION[await getPageId()] = 0;
+  }
+  lastPageType = curPageType;
+
+  pageReady(function () {
+    // console.log("---page Ready---", getPageType());
+    recoveryScrollPosition();
+  });
 }
 
-function handleDbclickTopbar() {
-  getMainBox().scrollTop = 0;
-}
+/**
+ * user model
+ */
+const model = {
+  backToTop(e) {
+    getMainBox().scrollTop = 0;
+  },
+};
 
 /**
  * entry
  */
-
 function main() {
   // console.log("ROAM_SAVE_SCROLLBAR_POSITION ready");
   // logseq.App.showMsg("❤️ Message from Hello World Plugin :)");
-  logseq.App.onRouteChanged(handleUrlChange);
+  logseq.App.onRouteChanged(handleRouteChange);
 
   // getMainBox().addEventListener("scroll", saveScrollPosition);
-  initScrollEvent(1000);
+  pageReady(function () {
+    // console.log("---page Ready---first", getPageType());
+    initScrollEvent();
+  });
 
-  getTopbar().addEventListener("dblclick", handleDbclickTopbar);
+  // external btns：https://github.com/xyhp915/logseq-journals-calendar/blob/8f2385cec8db180c4af06e757d25d790b7c0bebd/src/main.js#L124
+  logseq.provideModel(model);
+  logseq.App.registerUIItem("toolbar", {
+    key: "back-to-top",
+    template: `
+      <a class="button" id="back-to-top-button" data-on-click="backToTop">
+        <svg 
+          style="width: 20px; height: 20px;"
+
+          xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-square-rounded-arrow-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"
+        >
+          <path stroke="none" d="M0 0h20v20H0z" fill="none"></path>
+          <path d="M16 12l-4 -4l-4 4"></path>
+          <path d="M12 16v-8"></path>
+          <path d="M12 3c7.2 0 9 1.8 9 9s-1.8 9 -9 9s-9 -1.8 -9 -9s1.8 -9 9 -9z"></path>
+        </svg>
+      </a>
+    `,
+  });
 }
 
 function handleUnload() {
   // console.log("ROAM_SAVE_SCROLLBAR_POSITION onunload");
 
   getMainBox().removeEventListener("scroll", saveScrollPosition);
-
-  getTopbar().removeEventListener("dblclick", handleDbclickTopbar);
 }
 
 // bootstrap
