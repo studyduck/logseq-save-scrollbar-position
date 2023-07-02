@@ -140,7 +140,7 @@ const saveScrollPosition = debounce(async function () {
   window.LOGSEQ_SAVE_SCROLLBAR_POSITION[pageId] = mainBox.scrollTop;
 
   // console.log(
-  //   "---ROAM_SAVE_SCROLLBAR_POSITION data",
+  //   "---LOGSEQ_SAVE_SCROLLBAR_POSITION_PLUGIN data",
   //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
   // );
 }, 500);
@@ -164,6 +164,7 @@ async function recoveryScrollPosition() {
     return;
   }
 
+  const now = Date.now();
   const step = 200;
   const timer = setInterval(() => {
     if (mainBox.scrollTop + step < targetNum) {
@@ -172,8 +173,28 @@ async function recoveryScrollPosition() {
       clearInterval(timer);
       mainBox.scrollTop = targetNum;
       initScrollEvent();
+
+      console.log("scroll To Target 1 time", (Date.now() - now) / 1000);
     }
   }, 10);
+
+  // Whiteboards error
+  // const now = Date.now();
+  // const step = 200;
+  // let animationFrameId;
+  // function scrollToTarget() {
+  //   if (mainBox.scrollTop + step < targetNum) {
+  //     mainBox.scrollTop += step;
+  //     animationFrameId = requestAnimationFrame(scrollToTarget);
+  //   } else {
+  //     cancelAnimationFrame(animationFrameId);
+  //     mainBox.scrollTop = targetNum;
+  //     initScrollEvent();
+  //
+  //     console.log("scroll To Target 2 time", (Date.now() - now) / 1000);
+  //   }
+  // }
+  // scrollToTarget();
 }
 let lastPageType = "";
 async function handleRouteChange(route) {
@@ -205,7 +226,7 @@ const model = {
  * entry
  */
 function main() {
-  // console.log("ROAM_SAVE_SCROLLBAR_POSITION ready");
+  console.log("LOGSEQ_SAVE_SCROLLBAR_POSITION_PLUGIN load");
   // logseq.App.showMsg("❤️ Message from Hello World Plugin :)");
   logseq.App.onRouteChanged(handleRouteChange);
 
@@ -237,7 +258,7 @@ function main() {
 }
 
 function handleUnload() {
-  // console.log("ROAM_SAVE_SCROLLBAR_POSITION onunload");
+  // console.log("LOGSEQ_SAVE_SCROLLBAR_POSITION_PLUGIN unload");
 
   getMainBox().removeEventListener("scroll", saveScrollPosition);
 }
