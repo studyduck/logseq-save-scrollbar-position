@@ -102,7 +102,7 @@ function getFirstVisibleBlockId() {
     const rect = lsBlock.getBoundingClientRect();
     const lsBlockChilds = lsBlock.getElementsByClassName("ls-block");
 
-    if (rect.bottom >= mainRect.top && lsBlockChilds.length === 0) {
+    if (rect.top >= mainRect.top) {
       blockId = lsBlock.getAttribute("blockid");
       // console.log(lsBlock, blockId);
       break;
@@ -157,7 +157,8 @@ function initScrollEvent() {
 async function recoveryScrollPosition() {
   // console.log("---scrollPage is ready, recovery ScrollPosition");
   const mainBox = getMainBox();
-  const targetNum = window.LOGSEQ_SAVE_SCROLLBAR_POSITION[await getPageId()];
+  const pageId = await getPageId();
+  const targetNum = window.LOGSEQ_SAVE_SCROLLBAR_POSITION[pageId];
 
   if (!targetNum) {
     initScrollEvent();
