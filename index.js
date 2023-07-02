@@ -84,7 +84,8 @@ function debounce(func, wait, immediate = false) {
   };
 }
 
-// onRouteChanged->handleRouteChange->recoveryScrollPosition->scrollToBlockInPage->onRouteChanged : infinite loop
+// 1. onRouteChanged->handleRouteChange->recoveryScrollPosition->scrollToBlockInPage->onRouteChanged : infinite loop
+// 2. scrollToBlockInPage 滚动到较远的位置失败
 // logseq.Editor.scrollToBlockInPage(
 //   "6469cd04-e0fe-4250-8975-bce065209bd0",
 //   "6469cd04-0bc1-46fa-bb9c-d3680470f0aa"
