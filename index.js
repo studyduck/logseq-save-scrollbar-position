@@ -30,8 +30,8 @@ function getPageType() {
   // Graph view->graph              no scrollbar
 }
 
-function pageReady(callback) {
-  // when page is ready, callback will be called, can get mainBox and lsBlocks/dashboardCards/pageEntries
+function scrollPageReady(callback) {
+  // when scrollPage is ready, callback will be called, can get mainBox and lsBlocks/dashboardCards/pageEntries
   const pageType = getPageType();
   let getContTimer = null;
   let endTimer = null;
@@ -132,7 +132,7 @@ async function getPageId() {
 }
 
 const saveScrollPosition = debounce(async function () {
-  // console.log("---page is ready, save ScrollPosition");
+  // console.log("---scrollPage is ready, save ScrollPosition");
 
   const mainBox = getMainBox();
   const pageId = await getPageId();
@@ -146,7 +146,7 @@ const saveScrollPosition = debounce(async function () {
 }, 500);
 
 function initScrollEvent() {
-  // console.log("---page is ready, init ScrollEvent");
+  // console.log("---scrollPage is ready, init ScrollEvent");
   setTimeout(() => {
     const mainBox = getMainBox();
     mainBox.removeEventListener("scroll", saveScrollPosition);
@@ -155,7 +155,7 @@ function initScrollEvent() {
 }
 
 async function recoveryScrollPosition() {
-  // console.log("---page is ready, recovery ScrollPosition");
+  // console.log("---scrollPage is ready, recovery ScrollPosition");
   const mainBox = getMainBox();
   const targetNum = window.LOGSEQ_SAVE_SCROLLBAR_POSITION[await getPageId()];
 
@@ -186,8 +186,8 @@ async function handleRouteChange(route) {
   }
   lastPageType = curPageType;
 
-  pageReady(function () {
-    // console.log("---page Ready---", getPageType());
+  scrollPageReady(function () {
+    // console.log("---scrollPage Ready---", getPageType());
     recoveryScrollPosition();
   });
 }
@@ -210,8 +210,8 @@ function main() {
   logseq.App.onRouteChanged(handleRouteChange);
 
   // getMainBox().addEventListener("scroll", saveScrollPosition);
-  pageReady(function () {
-    // console.log("---page Ready---first", getPageType());
+  scrollPageReady(function () {
+    // console.log("---scrollPage Ready---first", getPageType());
     initScrollEvent();
   });
 
