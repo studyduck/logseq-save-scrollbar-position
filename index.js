@@ -32,6 +32,11 @@ function getPageType() {
 
 function scrollPageReady(callback) {
   // when scrollPage is ready, callback will be called, can get mainBox and lsBlocks/dashboardCards/pageEntries
+  // console.log(
+  //   "---scroll Page Ready function",
+  //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
+  // );
+
   const pageType = getPageType();
   let getContTimer = null;
   let endTimer = null;
@@ -112,11 +117,16 @@ function getFirstVisibleBlockId() {
   return blockId;
 }
 
-async function getPageId() {
+async function getCurGraphName() {
   const currentGraph = await logseq.Editor.getCurrentGraph();
+  return currentGraph.name;
+}
+
+async function getPageId() {
+  const curGraphName = await getCurGraphName();
   const currentPage = await logseq.Editor.getCurrentPage();
   const pageType = getPageType();
-  // console.log("currentGraph", currentGraph);
+  // console.log("curGraphName", curGraphName);
   // console.log("currentPage", currentPage);
   // console.log("pageType", pageType);
 
@@ -125,15 +135,18 @@ async function getPageId() {
     pageType === "all-pages" ||
     pageType === "whiteboards"
   ) {
-    return `${currentGraph.name}/${pageType}`;
+    return `${curGraphName}/${pageType}`;
   } else if (pageType === "page") {
-    return `${currentGraph.name}/${currentPage.uuid}`;
+    return `${curGraphName}/${currentPage.uuid}`;
   }
   return "";
 }
 
 const saveScrollPosition = debounce(async function () {
-  // console.log("---scrollPage is ready, save ScrollPosition");
+  // console.log(
+  //   "---scrollPage is ready, save ScrollPosition",
+  //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
+  // );
 
   const mainBox = getMainBox();
   const pageId = await getPageId();
@@ -147,7 +160,11 @@ const saveScrollPosition = debounce(async function () {
 }, 500);
 
 function initScrollEvent() {
-  // console.log("---scrollPage is ready, init ScrollEvent");
+  // console.log(
+  //   "---scrollPage is ready, init ScrollEvent",
+  //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
+  // );
+
   setTimeout(() => {
     const mainBox = getMainBox();
     mainBox.removeEventListener("scroll", saveScrollPosition);
@@ -156,7 +173,11 @@ function initScrollEvent() {
 }
 
 async function recoveryScrollPosition() {
-  // console.log("---scrollPage is ready, recovery ScrollPosition");
+  // console.log(
+  //   "---scrollPage is ready, recovery ScrollPosition",
+  //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
+  // );
+
   const mainBox = getMainBox();
   const pageId = await getPageId();
   const targetNum = window.LOGSEQ_SAVE_SCROLLBAR_POSITION[pageId];
@@ -198,15 +219,27 @@ async function recoveryScrollPosition() {
   // }
   // scrollToTarget();
 }
-let lastPageType = "";
-async function handleRouteChange(route) {
-  // console.log("---------route change---------");
 
-  // 和 all-pages、whiteboards 行为保持一致
+let lastGraphName = "";
+let lastPageType = "";
+
+async function handleRouteChange(route) {
+  // console.log(
+  //   "---------route change---------",
+  //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
+  // );
+
+  // 【在同一个 graph 中的 Journals 页面中】点击 Journals 按钮，使其和在 All pages、Whiteboards 中的行为保持一致
+  const curGraphName = await getCurGraphName();
   const curPageType = getPageType();
-  if (lastPageType === "home" && curPageType === "home") {
+  if (
+    curGraphName === lastGraphName &&
+    lastPageType === "home" &&
+    curPageType === "home"
+  ) {
     window.LOGSEQ_SAVE_SCROLLBAR_POSITION[await getPageId()] = 0;
   }
+  lastGraphName = curGraphName;
   lastPageType = curPageType;
 
   scrollPageReady(function () {
@@ -260,8 +293,7 @@ function main() {
 }
 
 function handleUnload() {
-  // console.log("LOGSEQ_SAVE_SCROLLBAR_POSITION_PLUGIN unload");
-
+  console.log("LOGSEQ_SAVE_SCROLLBAR_POSITION_PLUGIN unload");
   getMainBox().removeEventListener("scroll", saveScrollPosition);
 }
 
