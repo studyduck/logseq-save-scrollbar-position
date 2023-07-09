@@ -1,6 +1,13 @@
 window.LOGSEQ_SAVE_SCROLLBAR_POSITION =
   window.LOGSEQ_SAVE_SCROLLBAR_POSITION || {};
 
+let curMainBox = null;
+let curMainRect = null;
+let curPageType = "";
+let lastGraphName = "";
+let lastPageType = "";
+let curPageId = "";
+
 function getMainBox() {
   // 需要使用 top.document，否则只能获取沙盒中的 html 元素，无法获取 logseq 中的元素：https://github.com/vipzhicheng/logseq-plugin-vim-shortcuts/blob/c6d9defef82701a61d7b4f128e3fbdc62ca34411/src/stores/search.ts#L146
   // console.log("body", top.document.body);
@@ -37,7 +44,6 @@ function scrollPageReady(callback) {
   //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
   // );
 
-  const pageType = getPageType();
   let getContTimer = null;
   let endTimer = null;
 
@@ -53,11 +59,11 @@ function scrollPageReady(callback) {
   };
 
   getContTimer = setInterval(() => {
-    if (pageType === "home" || pageType === "page") {
+    if (curPageType === "home" || curPageType === "page") {
       getPageContent(getLsBlocks);
-    } else if (pageType === "whiteboards") {
+    } else if (curPageType === "whiteboards") {
       getPageContent(getDashboardCards);
-    } else if (pageType === "all-pages") {
+    } else if (curPageType === "all-pages") {
       getPageContent(getPageEntries);
     }
   }, 10);
@@ -96,10 +102,8 @@ function debounce(func, wait, immediate = false) {
 //   "6469cd04-0bc1-46fa-bb9c-d3680470f0aa"
 // );
 function getFirstVisibleBlockId() {
-  const mainBox = getMainBox();
-  const mainRect = mainBox.getBoundingClientRect();
-  const lsBlocks = mainBox.getElementsByClassName("ls-block");
-  // console.log("mainRect", mainRect);
+  const lsBlocks = curMainBox.getElementsByClassName("ls-block");
+  // console.log("curMainRect", curMainRect);
 
   let blockId = "";
 
@@ -108,13 +112,26 @@ function getFirstVisibleBlockId() {
     const rect = lsBlock.getBoundingClientRect();
     const lsBlockChilds = lsBlock.getElementsByClassName("ls-block");
 
-    if (rect.top >= mainRect.top) {
+    if (rect.top >= curMainRect.top) {
       blockId = lsBlock.getAttribute("blockid");
       // console.log(lsBlock, blockId);
       break;
     }
   }
   return blockId;
+}
+
+function firstLoadingElementIsVisible() {
+  const firstLoadingElement = curMainBox.querySelectorAll(
+    ".lazy-visibility .shadow.fade-in"
+  )[0];
+
+  // console.log("firstLoadingElement", firstLoadingElement);
+
+  if (!firstLoadingElement) return false;
+
+  const rect = firstLoadingElement.getBoundingClientRect();
+  return rect.top >= curMainRect.top && rect.top <= curMainRect.bottom;
 }
 
 async function getCurGraphName() {
@@ -148,10 +165,7 @@ const saveScrollPosition = debounce(async function () {
   //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
   // );
 
-  const mainBox = getMainBox();
-  const pageId = await getPageId();
-
-  window.LOGSEQ_SAVE_SCROLLBAR_POSITION[pageId] = mainBox.scrollTop;
+  window.LOGSEQ_SAVE_SCROLLBAR_POSITION[curPageId] = curMainBox.scrollTop;
 
   // console.log(
   //   "---LOGSEQ_SAVE_SCROLLBAR_POSITION_PLUGIN data",
@@ -166,21 +180,18 @@ function initScrollEvent() {
   // );
 
   setTimeout(() => {
-    const mainBox = getMainBox();
-    mainBox.removeEventListener("scroll", saveScrollPosition);
-    mainBox.addEventListener("scroll", saveScrollPosition);
+    curMainBox.removeEventListener("scroll", saveScrollPosition);
+    curMainBox.addEventListener("scroll", saveScrollPosition); // ---
   }, 10);
 }
 
-async function recoveryScrollPosition() {
+function recoveryScrollPosition() {
   // console.log(
   //   "---scrollPage is ready, recovery ScrollPosition",
   //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
   // );
 
-  const mainBox = getMainBox();
-  const pageId = await getPageId();
-  const targetNum = window.LOGSEQ_SAVE_SCROLLBAR_POSITION[pageId];
+  const targetNum = window.LOGSEQ_SAVE_SCROLLBAR_POSITION[curPageId];
 
   if (!targetNum) {
     initScrollEvent();
@@ -188,18 +199,46 @@ async function recoveryScrollPosition() {
   }
 
   const now = Date.now();
-  const step = 200;
-  const timer = setInterval(() => {
-    if (mainBox.scrollTop + step < targetNum) {
-      mainBox.scrollTop += step;
-    } else {
-      clearInterval(timer);
-      mainBox.scrollTop = targetNum;
-      initScrollEvent();
+  const step = 400;
 
-      console.log("scroll To Target 1 time", (Date.now() - now) / 1000);
-    }
-  }, 10);
+  let scrollTimer = null;
+  let loadingTimer = null;
+
+  startTimer();
+  function startTimer() {
+    scrollTimer = setInterval(() => {
+      // console.log("scrollTimer function");
+
+      if (curMainBox.scrollTop + step < targetNum) {
+        if (firstLoadingElementIsVisible()) {
+          // console.log(
+          //   "firstLoadingElementIsVisible",
+          //   firstLoadingElementIsVisible()
+          // );
+          clearInterval(scrollTimer);
+
+          loadingTimer = setInterval(() => {
+            // console.log("loadingTimer function");
+            if (!firstLoadingElementIsVisible()) {
+              clearInterval(loadingTimer);
+              startTimer();
+            }
+          }, 0);
+        } else {
+          curMainBox.scrollTop += step;
+        }
+      } else {
+        clearInterval(scrollTimer);
+        curMainBox.scrollTop = targetNum;
+
+        setTimeout(() => {
+          curMainBox.scrollTop = targetNum;
+          initScrollEvent();
+          console.log("scroll To Target 1 time", (Date.now() - now) / 1000);
+        }, 10);
+      }
+    }, 10);
+  }
 
   // Whiteboards error
   // const now = Date.now();
@@ -220,39 +259,51 @@ async function recoveryScrollPosition() {
   // scrollToTarget();
 }
 
-let lastGraphName = "";
-let lastPageType = "";
-
 async function handleRouteChange(route) {
   // console.log(
   //   "---------route change---------",
   //   window.LOGSEQ_SAVE_SCROLLBAR_POSITION
   // );
 
+  curPageId = await getPageId();
   // 【在同一个 graph 中的 Journals 页面中】点击 Journals 按钮，使其和在 All pages、Whiteboards 中的行为保持一致
   const curGraphName = await getCurGraphName();
-  const curPageType = getPageType();
+  curPageType = getPageType();
+
+  // console.log("curPageId", curPageId);
+  // console.log("curGraphName", curGraphName);
+  // console.log("curPageType", curPageType);
+
   if (
     curGraphName === lastGraphName &&
     lastPageType === "home" &&
     curPageType === "home"
   ) {
-    window.LOGSEQ_SAVE_SCROLLBAR_POSITION[await getPageId()] = 0;
+    window.LOGSEQ_SAVE_SCROLLBAR_POSITION[curPageId] = 0;
   }
   lastGraphName = curGraphName;
   lastPageType = curPageType;
 
-  scrollPageReady(function () {
-    // console.log("---scrollPage Ready---", getPageType());
+  scrollPageReady(async function () {
+    curMainBox = getMainBox();
+    curMainRect = curMainBox.getBoundingClientRect();
+
+    // console.log("---scrollPage Ready---", curPageType);
+
     recoveryScrollPosition();
   });
+}
+
+function handleUnload() {
+  console.log("LOGSEQ_SAVE_SCROLLBAR_POSITION_PLUGIN unload");
+  getMainBox().removeEventListener("scroll", saveScrollPosition);
 }
 
 /**
  * user model
  */
 const model = {
-  backToTop(e) {
+  backToTop() {
     getMainBox().scrollTop = 0;
   },
 };
@@ -260,22 +311,30 @@ const model = {
 /**
  * entry
  */
-function main() {
+async function main() {
   console.log("LOGSEQ_SAVE_SCROLLBAR_POSITION_PLUGIN load");
   // logseq.App.showMsg("❤️ Message from Hello World Plugin :)");
   logseq.App.onRouteChanged(handleRouteChange);
 
+  curPageId = await getPageId();
+  curPageType = getPageType();
+
   // getMainBox().addEventListener("scroll", saveScrollPosition);
-  scrollPageReady(function () {
-    // console.log("---scrollPage Ready---first", getPageType());
+  scrollPageReady(async function () {
+    curMainBox = getMainBox();
+    curMainRect = curMainBox.getBoundingClientRect();
+
+    // console.log("---scrollPage Ready---first", curPageType);
+
     initScrollEvent();
   });
 
-  // external btns：https://github.com/xyhp915/logseq-journals-calendar/blob/8f2385cec8db180c4af06e757d25d790b7c0bebd/src/main.js#L124
-  logseq.provideModel(model);
-  logseq.App.registerUIItem("toolbar", {
-    key: "back-to-top",
-    template: `
+  setTimeout(() => {
+    // external btns：https://github.com/xyhp915/logseq-journals-calendar/blob/8f2385cec8db180c4af06e757d25d790b7c0bebd/src/main.js#L124
+    logseq.provideModel(model);
+    logseq.App.registerUIItem("toolbar", {
+      key: "back-to-top",
+      template: `
       <a class="button" id="back-to-top-button" data-on-click="backToTop">
         <svg 
           style="width: 20px; height: 20px;"
@@ -289,15 +348,11 @@ function main() {
         </svg>
       </a>
     `,
-  });
-}
+    });
+  }, 10);
 
-function handleUnload() {
-  console.log("LOGSEQ_SAVE_SCROLLBAR_POSITION_PLUGIN unload");
-  getMainBox().removeEventListener("scroll", saveScrollPosition);
+  logseq.beforeunload(handleUnload);
 }
 
 // bootstrap
 logseq.ready(main).catch(console.error);
-
-logseq.beforeunload(handleUnload);
