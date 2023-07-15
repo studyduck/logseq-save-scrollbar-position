@@ -14,3 +14,6 @@ Demo2, in the "Whiteboards" page:
 
 Demo3, in the "All pages" page:
 ![demo3](./demo3.gif)
+
+Demo4, anchors between blocks on the same page:
+![demo4](./demo4.gif)

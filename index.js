@@ -299,6 +299,29 @@ function handleUnload() {
   getMainBox().removeEventListener("scroll", saveScrollPosition);
 }
 
+// logseq.Editor.getBlock 可传 id(number) 或 uuid(string)
+async function setParentExpand(curBlockObj) {
+  // console.log("curBlockObj", curBlockObj);
+  const parentId = curBlockObj?.parent?.id;
+
+  if (parentId) {
+    // 获取父级
+    const parent = await logseq.Editor.getBlock(parentId);
+    // console.log("parent", parent);
+
+    if (parent === null) {
+      // 当前已经是最顶层父级
+      return curBlockObj.uuid;
+    }
+
+    if (parent?.["collapsed?"] === true) {
+      await logseq.Editor.setBlockCollapsed(parent.uuid, false);
+    }
+
+    return await setParentExpand(parent);
+  }
+}
+
 /**
  * user model
  */
@@ -306,7 +329,131 @@ const model = {
   backToTop() {
     getMainBox().scrollTop = 0;
   },
+  async goToAnchorTarget(e) {
+    const currentBlockId = e?.dataset?.currentBlockId;
+    const targetBlockId = e?.dataset?.targetBlockId;
+
+    const currentBlockObj = await logseq.Editor.getBlock(currentBlockId);
+    const targetBlockObj = await logseq.Editor.getBlock(targetBlockId);
+
+    const pageObjOfCurrentBlock = await logseq.Editor.getPage(
+      currentBlockObj.page.id
+    );
+    const pageObjOfTargetBlock = await logseq.Editor.getPage(
+      targetBlockObj.page.id
+    );
+
+    // console.log("pageObjOfCurrentBlock", pageObjOfCurrentBlock);
+    // console.log("pageObjOfTargetBlock", pageObjOfTargetBlock);
+    if (pageObjOfTargetBlock.uuid !== pageObjOfCurrentBlock.uuid) {
+      logseq.App.showMsg("Target block is not on the current page.");
+      console.log("目标块和当前块不在同一个页面，targetElement 将为 null");
+
+      // 进入目标页面
+      // logseq.App.pushState("page", {
+      //   name: pageObjOfTargetBlock.name,
+      // });
+
+      return;
+    }
+
+    const topParentId = await setParentExpand(targetBlockObj);
+    // console.log("topParentId", topParentId);
+
+    scrollBlockIntoView(topParentId);
+    setTimeout(() => {
+      scrollBlockIntoView(targetBlockId);
+    }, 10);
+  },
 };
+
+function scrollBlockIntoView(targetBlockId) {
+  // 目标元素，不能是 block reference：`span.block-ref>#block-content-${targetBlockId}`
+  const targetElement = curMainBox.querySelector(
+    `div>#block-content-${targetBlockId}`
+  );
+
+  if (!targetElement) {
+    console.log("targetElement is", targetElement);
+    return;
+  }
+
+  const targetElementRect = targetElement.getBoundingClientRect();
+  const distance = targetElementRect.top - curMainRect.top;
+  // console.log("distance", distance);
+  curMainBox.scrollTop = curMainBox.scrollTop + distance;
+}
+
+function copyToClipboard(value) {
+  const doc = top.document;
+  const element = doc.createElement("textarea");
+
+  doc.body.appendChild(element);
+  element.value = value;
+  element.select();
+
+  if (doc.execCommand) {
+    doc.execCommand("copy");
+    doc.body.removeChild(element);
+    return true;
+  }
+
+  doc.body.removeChild(element);
+  return false;
+}
+
+function setAnchorRenderer() {
+  const anchorType = "ls-save-scrollbar-position-anchor";
+
+  // 注册 block 中的自定义渲染内容 {{renderer anchorType, 64b2691b-c7b2-4d76-bd71-32f87d86b6ab}}
+  logseq.App.onMacroRendererSlotted(async ({ slot, payload }) => {
+    // console.log("slot", slot);
+    // console.log("payload", payload);
+
+    const rendered = top.document.getElementById(slot)?.childElementCount;
+    // 同一个 block 中，防止重复渲染
+    if (rendered) {
+      return;
+    }
+
+    const currentBlockId = payload.uuid;
+    const [type, targetBlockId] = payload.arguments;
+    const showText = `anchor: ${targetBlockId.slice(-6)}`;
+
+    if (type !== anchorType) {
+      return;
+    }
+
+    logseq.provideUI({
+      // 如果 key 相同，后面的会覆盖前面的，导致不同 block 中只能渲染出一个，所以需要加上 slot
+      key: `anchor-button-${slot}`,
+      slot,
+      template: `
+        <button 
+          style="border:1px solid #ddd; border-radius: 5px; padding: 0 6px;"
+          data-on-click="goToAnchorTarget"
+          data-current-block-id="${currentBlockId}"
+          data-target-block-id="${targetBlockId}"
+        >${showText}</button>
+      `,
+    });
+  });
+
+  // 注册 block context menu
+  logseq.Editor.registerBlockContextMenuItem(
+    "Save Scrollbar Position: Copy anchor link",
+    async (params) => {
+      // console.log("params", params);
+
+      const blockId = params.uuid;
+      const customRendererText = `{{renderer ${anchorType}, ${blockId}}}`;
+
+      if (copyToClipboard(customRendererText)) {
+        logseq.App.showMsg("Copy success");
+      }
+    }
+  );
+}
 
 /**
  * entry
@@ -332,27 +479,29 @@ async function main() {
   setTimeout(() => {
     // external btns：https://github.com/xyhp915/logseq-journals-calendar/blob/8f2385cec8db180c4af06e757d25d790b7c0bebd/src/main.js#L124
     logseq.provideModel(model);
+
     logseq.App.registerUIItem("toolbar", {
       key: "back-to-top",
       template: `
-      <a class="button" id="back-to-top-button" data-on-click="backToTop">
-        <svg 
-          style="width: 20px; height: 20px;"
-
-          xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-square-rounded-arrow-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"
-        >
-          <path stroke="none" d="M0 0h20v20H0z" fill="none"></path>
-          <path d="M16 12l-4 -4l-4 4"></path>
-          <path d="M12 16v-8"></path>
-          <path d="M12 3c7.2 0 9 1.8 9 9s-1.8 9 -9 9s-9 -1.8 -9 -9s1.8 -9 9 -9z"></path>
-        </svg>
-      </a>
-    `,
+        <a class="button" id="back-to-top-button" data-on-click="backToTop">
+          <svg 
+            style="width: 20px; height: 20px;"
+  
+            xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-square-rounded-arrow-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"
+          >
+            <path stroke="none" d="M0 0h20v20H0z" fill="none"></path>
+            <path d="M16 12l-4 -4l-4 4"></path>
+            <path d="M12 16v-8"></path>
+            <path d="M12 3c7.2 0 9 1.8 9 9s-1.8 9 -9 9s-9 -1.8 -9 -9s1.8 -9 9 -9z"></path>
+          </svg>
+        </a>
+      `,
     });
+
+    setAnchorRenderer();
   }, 10);
 
   logseq.beforeunload(handleUnload);
 }
 
-// bootstrap
 logseq.ready(main).catch(console.error);
