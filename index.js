@@ -129,9 +129,17 @@ function firstLoadingElementIsVisible() {
   // console.log("firstLoadingElement", firstLoadingElement);
 
   if (!firstLoadingElement) return false;
+  return checkElementIsVisible(firstLoadingElement);
+}
 
-  const rect = firstLoadingElement.getBoundingClientRect();
+function checkElementIsVisible(element) {
+  const rect = element.getBoundingClientRect();
   return rect.top >= curMainRect.top && rect.top <= curMainRect.bottom;
+}
+
+function checkElementPassViewBottom(element) {
+  const rect = element.getBoundingClientRect();
+  return rect.top <= curMainRect.bottom;
 }
 
 async function getCurGraphName() {
@@ -357,21 +365,78 @@ const model = {
       return;
     }
 
-    const topParentId = await setParentExpand(targetBlockObj);
+    // 展开所有父级
+    // const topParentId = await setParentExpand(targetBlockObj);
     // console.log("topParentId", topParentId);
+    await setParentExpand(targetBlockObj);
 
-    scrollBlockIntoView(topParentId);
-    setTimeout(() => {
-      scrollBlockIntoView(targetBlockId);
-    }, 10);
+    await scrollTargetBlockIntoView(currentBlockObj, targetBlockObj);
   },
 };
 
-function scrollBlockIntoView(targetBlockId) {
-  // 目标元素，不能是 block reference：`span.block-ref>#block-content-${targetBlockId}`
-  const targetElement = curMainBox.querySelector(
-    `div>#block-content-${targetBlockId}`
+async function scrollTargetBlockIntoView(currentBlockObj, targetBlockObj) {
+  // console.log(
+  //   "currentBlockObj, targetBlockObj",
+  //   currentBlockObj,
+  //   targetBlockObj
+  // );
+
+  const pageObjOfCurrentBlock = await logseq.Editor.getPage(
+    currentBlockObj.page.id
   );
+
+  // console.log("pageObjOfCurrentBlock", pageObjOfCurrentBlock);
+
+  const curPageBlocksTree = await logseq.Editor.getPageBlocksTree(
+    pageObjOfCurrentBlock.uuid
+  );
+  // console.log("curPageBlocksTree", curPageBlocksTree);
+
+  let targetIsBottom = "";
+  function findBlock(curPageBlocksTree) {
+    for (const block of curPageBlocksTree) {
+      if (targetIsBottom === "") {
+        if (block.uuid === currentBlockObj.uuid) {
+          targetIsBottom = true;
+          break;
+        } else if (block.uuid === targetBlockObj.uuid) {
+          targetIsBottom = false;
+          break;
+        } else if (block.children.length > 0) {
+          findBlock(block.children);
+        }
+      } else {
+        break;
+      }
+    }
+  }
+  findBlock(curPageBlocksTree);
+
+  // console.log("targetIsBottom", targetIsBottom);
+  if (targetIsBottom === false) {
+    scrollLoadedBlockIntoView(targetBlockObj.uuid);
+  } else if (targetIsBottom === true) {
+    scrollUnloadedBlockIntoView(targetBlockObj.uuid);
+  }
+}
+
+function getBlockElement(blockId) {
+  // console.log(`document.querySelector("div>#block-content-${blockId}")`);
+
+  // 排除 block reference：`span.block-ref>#block-content-${targetBlockId}`
+  return curMainBox.querySelector(`div>#block-content-${blockId}`);
+}
+
+function setElementHighlight(element) {
+  const oldBackgroundColor = element.style.backgroundColor;
+  element.style.backgroundColor = "#ddd";
+  setTimeout(() => {
+    element.style.backgroundColor = oldBackgroundColor;
+  }, 1000);
+}
+
+function scrollLoadedBlockIntoView(targetBlockId) {
+  const targetElement = getBlockElement(targetBlockId);
 
   if (!targetElement) {
     console.log("targetElement is", targetElement);
@@ -380,8 +445,67 @@ function scrollBlockIntoView(targetBlockId) {
 
   const targetElementRect = targetElement.getBoundingClientRect();
   const distance = targetElementRect.top - curMainRect.top;
+  // console.log("targetElementRect", targetElementRect, targetElementRect.top);
+  // console.log("curMainRect", curMainRect, curMainRect.top);
   // console.log("distance", distance);
   curMainBox.scrollTop = curMainBox.scrollTop + distance;
+
+  setTimeout(() => {
+    setElementHighlight(targetElement);
+  }, 10);
+}
+
+function scrollUnloadedBlockIntoView(targetBlockId) {
+  const now = Date.now();
+  const step = 400;
+
+  let scrollTimer = null;
+  let loadingTimer = null;
+
+  let lastScrollTop = 0;
+
+  startTimer();
+  function startTimer() {
+    scrollTimer = setInterval(() => {
+      const targetElement = getBlockElement(targetBlockId);
+      if (!targetElement) {
+        // console.log("targetElement dom 未加载");
+
+        // console.log(
+        //   "firstLoadingElementIsVisible",
+        //   firstLoadingElementIsVisible()
+        // );
+
+        if (firstLoadingElementIsVisible()) {
+          clearInterval(scrollTimer);
+
+          loadingTimer = setInterval(() => {
+            console.log("loadingTimer function");
+
+            if (!firstLoadingElementIsVisible()) {
+              clearInterval(loadingTimer);
+              startTimer();
+            }
+          }, 0);
+        } else {
+          curMainBox.scrollTop += step;
+
+          // 折叠targetBlock的父级后，重新进入当前页面，滚动时block加载不出来，停在这里
+          if (curMainBox.scrollTop === lastScrollTop) {
+            curMainBox.scrollTop -= 1;
+          }
+
+          lastScrollTop = curMainBox.scrollTop;
+        }
+      } else {
+        // console.log("targetElement dom 已加载");
+
+        clearInterval(scrollTimer);
+        scrollLoadedBlockIntoView(targetBlockId);
+        console.log("scroll To Target 3 time", (Date.now() - now) / 1000);
+      }
+    }, 10);
+  }
 }
 
 function copyToClipboard(value) {
@@ -418,7 +542,8 @@ function setAnchorRenderer() {
 
     const currentBlockId = payload.uuid;
     const [type, targetBlockId] = payload.arguments;
-    const showText = `anchor: ${targetBlockId.slice(-6)}`;
+    // const showText = `anchor: ${targetBlockId.slice(-6)}`;
+    const showText = `anchor`;
 
     if (type !== anchorType) {
       return;
@@ -440,19 +565,19 @@ function setAnchorRenderer() {
   });
 
   // 注册 block context menu
-  logseq.Editor.registerBlockContextMenuItem(
-    "Save Scrollbar Position: Copy anchor link",
-    async (params) => {
-      // console.log("params", params);
-
-      const blockId = params.uuid;
-      const customRendererText = `{{renderer ${anchorType}, ${blockId}}}`;
-
-      if (copyToClipboard(customRendererText)) {
-        logseq.App.showMsg("Copy success");
-      }
-    }
-  );
+  // logseq.Editor.registerBlockContextMenuItem(
+  //   "Save Scrollbar Position: Copy anchor link",
+  //   async (params) => {
+  //     // console.log("params", params);
+  //
+  //     const blockId = params.uuid;
+  //     const customRendererText = `((${blockId})) {{renderer ${anchorType}, ${blockId}}}`;
+  //
+  //     if (copyToClipboard(customRendererText)) {
+  //       logseq.App.showMsg("Copy success");
+  //     }
+  //   }
+  // );
 }
 
 /**
